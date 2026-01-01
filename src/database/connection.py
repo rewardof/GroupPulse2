@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import NullPool, QueuePool
+from sqlalchemy.pool import NullPool
 from config.settings import settings
 import logging
 
@@ -33,29 +33,41 @@ def get_async_engine() -> AsyncEngine:
     global _async_engine
 
     if _async_engine is None:
-        logger.info(f"Creating async database engine: {settings.DATABASE_URL.split('@')[1]}")
+        # Safe database URL logging (hide password)
+        if '@' in settings.DATABASE_URL:
+            safe_url = settings.DATABASE_URL.split('@')[1]
+        else:
+            safe_url = "local database"
+
+        logger.info(f"Creating async database engine: {safe_url}")
+
+        # Determine if using PostgreSQL or SQLite
+        is_postgres = settings.DATABASE_URL.startswith('postgresql')
+
+        # Base engine arguments
+        engine_args = {
+            "echo": settings.DB_ECHO,
+            "poolclass": NullPool,  # Required for async engines
+        }
+
+        # PostgreSQL-specific settings
+        if is_postgres:
+            engine_args.update({
+                "pool_pre_ping": True,
+                "connect_args": {
+                    "server_settings": {
+                        "application_name": settings.APP_NAME,
+                        "jit": "off",
+                    }
+                },
+            })
 
         _async_engine = create_async_engine(
             settings.DATABASE_URL,
-            echo=settings.DB_ECHO,
-            pool_pre_ping=True,  # Verify connections before using
-            pool_size=settings.DB_POOL_SIZE,
-            max_overflow=settings.DB_MAX_OVERFLOW,
-            pool_timeout=settings.DB_POOL_TIMEOUT,
-            poolclass=QueuePool if settings.is_production else NullPool,
-            # Performance optimizations
-            connect_args={
-                "server_settings": {
-                    "application_name": settings.APP_NAME,
-                    "jit": "off",  # Disable JIT for faster simple queries
-                }
-            },
+            **engine_args
         )
 
-        logger.info(
-            f"Database engine created: pool_size={settings.DB_POOL_SIZE}, "
-            f"max_overflow={settings.DB_MAX_OVERFLOW}"
-        )
+        logger.info(f"Database engine created (async with NullPool)")
 
     return _async_engine
 
@@ -117,8 +129,9 @@ async def health_check() -> bool:
         bool: True if database is healthy, False otherwise
     """
     try:
+        from sqlalchemy import text
         async with get_async_session() as session:
-            result = await session.execute("SELECT 1")
+            result = await session.execute(text("SELECT 1"))
             return result.scalar() == 1
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
