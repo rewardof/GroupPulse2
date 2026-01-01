@@ -162,13 +162,6 @@ MAX_CONCURRENT_FORWARDS=50
 MESSAGE_BATCH_SIZE=20
 ```
 
-**Encryption Key generatsiya qiling:**
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
-Natijani `SESSION_ENCRYPTION_KEY` ga qo'ying.
-
 ---
 
 ## 🗄️ 5. Database Migratsiya

@@ -4,7 +4,7 @@ High-performance Telegram message forwarding system with userbot monitoring and 
 
 ## 🚀 Features
 
-- **🔐 Secure Session Management**: Session strings encrypted with AES-256-GCM
+- **🔐 Secure Session Management**: Session strings stored in database
 - **📱 Multi-Group Monitoring**: Listen to 200+ groups per account
 - **🔑 Keyword Filtering**: Regex and literal keyword matching
 - **⚙️ Flexible Rules**: Create complex forwarding rules with conditions
@@ -39,20 +39,16 @@ nano .env
 
 # Required values:
 # - BOT_TOKEN=your_bot_token
-# - SESSION_ENCRYPTION_KEY=generate_with_command_below
 # - DATABASE_URL=postgresql+asyncpg://grouppulse:password@postgres:5432/grouppulse
 # - REDIS_URL=redis://:password@redis:6379/0
 
-# 4. Generate encryption key
-python -c "import secrets; print(secrets.token_hex(32))"
-
-# 5. Run database migrations
+# 4. Run database migrations
 make migrate
 
-# 6. Start all services
+# 5. Start all services
 make start
 
-# 7. View logs
+# 6. View logs
 make logs
 ```
 
@@ -181,8 +177,7 @@ Your session will be encrypted and stored securely.
 
 ## 🔒 Security
 
-- ✅ Session strings encrypted with AES-256-GCM
-- ✅ Encryption key in environment variable (not code)
+- ✅ Session strings stored securely in database
 - ✅ PostgreSQL password protected
 - ✅ Redis password enabled
 - ✅ Docker containers run as non-root

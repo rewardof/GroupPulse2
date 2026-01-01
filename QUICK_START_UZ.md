@@ -50,9 +50,6 @@ DB_ECHO=false
 REDIS_URL=redis://localhost:6379/0
 REDIS_MAX_CONNECTIONS=10
 
-# Encryption Key (avtomatik generatsiya)
-SESSION_ENCRYPTION_KEY=ENCRYPTION_KEY_SHUNGA
-
 # Rate Limits
 GLOBAL_RATE_LIMIT=100
 ACCOUNT_RATE_LIMIT=20
@@ -67,13 +64,8 @@ MESSAGE_LOG_RETENTION_DAYS=30
 METRICS_RETENTION_DAYS=7
 EOF
 
-# Encryption key generatsiya
-python -c "import secrets; print('Generated key:', secrets.token_hex(32))"
-
-# Natijani .env ga qo'ying:
+# .env faylini tekshiring va BOT_TOKEN ni to'ldiring:
 nano .env
-# SESSION_ENCRYPTION_KEY= ga yukordagi natijani qo'ying
-# BOT_TOKEN= ga BotFather'dan olgan tokenni qo'ying
 ```
 
 Yoki qisqaroq:
@@ -81,10 +73,7 @@ Yoki qisqaroq:
 ```bash
 # Avtomatik .env yaratish
 python3 << 'PYTHON_SCRIPT'
-import secrets
-
 bot_token = input("BotFather'dan olgan tokenni kiriting: ").strip()
-encryption_key = secrets.token_hex(32)
 
 env_content = f"""# Application
 APP_NAME=GroupPulse
@@ -104,9 +93,6 @@ DB_ECHO=false
 # Redis
 REDIS_URL=redis://localhost:6379/0
 REDIS_MAX_CONNECTIONS=10
-
-# Encryption Key
-SESSION_ENCRYPTION_KEY={encryption_key}
 
 # Rate Limits
 GLOBAL_RATE_LIMIT=100

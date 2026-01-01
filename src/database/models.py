@@ -117,9 +117,8 @@ class TelegramAccount(Base):
     api_id: Mapped[int] = mapped_column(Integer, nullable=False)
     api_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    # Encrypted session string (AES-256-GCM)
-    session_string_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
-    session_encryption_key_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Session string (plain text - stored directly)
+    session_string: Mapped[str] = mapped_column(Text, nullable=False)
 
     is_authorized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

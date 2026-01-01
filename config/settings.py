@@ -90,24 +90,9 @@ class Settings(BaseSettings):
     # =============================================================================
     # Security & Encryption
     # =============================================================================
-    SESSION_ENCRYPTION_KEY: str = Field(
-        description="AES-256 encryption key for session strings (64 hex chars)"
-    )
     JWT_SECRET: str = Field(default="change-me-in-production", description="JWT secret key")
     JWT_ALGORITHM: str = Field(default="HS256", description="JWT algorithm")
     JWT_EXPIRATION_HOURS: int = Field(default=24, ge=1, description="JWT expiration in hours")
-
-    @field_validator("SESSION_ENCRYPTION_KEY")
-    @classmethod
-    def validate_encryption_key(cls, v: str) -> str:
-        """Validate encryption key is 64 hex characters (32 bytes)."""
-        if len(v) != 64:
-            raise ValueError("SESSION_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)")
-        try:
-            int(v, 16)  # Verify it's valid hex
-        except ValueError:
-            raise ValueError("SESSION_ENCRYPTION_KEY must be hexadecimal")
-        return v
 
     # =============================================================================
     # Rate Limiting
