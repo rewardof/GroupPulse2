@@ -1,0 +1,36 @@
+# GroupPulse Dependencies
+# Python >= 3.11
+
+# Telegram libraries
+aiogram==3.13.1
+telethon==1.36.0
+
+# Database
+sqlalchemy[asyncio]==2.0.35
+asyncpg==0.29.0
+alembic==1.13.3
+
+# Redis
+redis[hiredis]==5.2.0
+
+# Configuration & validation
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+
+# Cryptography
+cryptography==43.0.3
+
+# Logging
+python-json-logger==3.2.0
+
+# Utilities
+aiofiles==24.1.0
+
+# Development dependencies (optional)
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+black==24.10.0
+ruff==0.7.4
+mypy==1.13.0

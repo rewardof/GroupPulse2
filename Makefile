@@ -27,18 +27,24 @@ setup:
 		cp .env.example .env; \
 		echo "✓ Created .env file - please edit with your credentials"; \
 	fi
-	@poetry install
+	@if [ ! -d venv ]; then \
+		python3.11 -m venv venv; \
+		echo "✓ Virtual environment created"; \
+	fi
+	@echo "Activating venv and installing dependencies..."
+	@bash -c "source venv/bin/activate && pip install -r requirements.txt"
 	@echo "✓ Dependencies installed"
 	@echo ""
 	@echo "Next steps:"
-	@echo "1. Edit .env with your configuration"
-	@echo "2. Run 'make migrate' to setup database"
-	@echo "3. Run 'make start' to start services"
+	@echo "1. source venv/bin/activate"
+	@echo "2. Edit .env with your configuration"
+	@echo "3. Run 'make migrate' to setup database"
+	@echo "4. Run 'make run-bot' to start bot (lokal)"
 
 # Install dependencies
 install:
 	@echo "Installing dependencies..."
-	@poetry install
+	@pip install -r requirements.txt
 
 # Database migrations
 migrate:
@@ -55,7 +61,20 @@ downgrade:
 	@echo "Downgrading database..."
 	@alembic downgrade -1
 
-# Docker Compose commands
+# Local run commands (Docker'siz)
+run-bot:
+	@echo "Starting bot (local)..."
+	@bash -c "source venv/bin/activate && python -m src.bot.app"
+
+run-main:
+	@echo "Starting main app (local)..."
+	@bash -c "source venv/bin/activate && python -m src.main"
+
+create-db:
+	@echo "Creating database tables..."
+	@bash -c "source venv/bin/activate && python -c 'import asyncio; from src.database.connection import get_async_engine; from src.database.models import Base; asyncio.run((lambda: get_async_engine().begin()).__call__()).run_sync(Base.metadata.create_all)' || python scripts/create_db.py"
+
+# Docker Compose commands (agar Docker bo'lsa)
 start:
 	@echo "Starting GroupPulse services..."
 	@docker-compose up -d
