@@ -10,9 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 class AccountSetupStates(StatesGroup):
     """FSM states for account setup flow."""
 
-    # Account setup flow
-    waiting_for_api_id = State()
-    waiting_for_api_hash = State()
+    # Account setup flow (API credentials from .env)
     waiting_for_phone = State()
     waiting_for_code = State()
     waiting_for_password = State()

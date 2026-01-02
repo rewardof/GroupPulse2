@@ -16,7 +16,8 @@ from src.database.connection import get_async_session
 from src.database.repositories.account_repo import AccountRepository
 from src.database.repositories.base import BaseRepository
 from src.database.models import User, TelegramAccount
-from src.utils.validators import validate_phone_number, validate_api_credentials
+from src.utils.validators import validate_phone_number
+from config.settings import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -78,68 +79,14 @@ async def callback_add_account(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.edit_text(
         "🔐 *Telegram Account Qo'shish*\n\n"
-        "Birinchi navbatda, API credentials kerak.\n\n"
-        "1. https://my.telegram.org ga kiring\n"
-        "2. 'API development tools' ga o'ting\n"
-        "3. App yarating va API ID/Hash oling\n\n"
-        "Endi *API ID* ni yuboring:",
-        parse_mode="Markdown",
-        reply_markup=cancel_keyboard()
-    )
-    await state.set_state(AccountSetupStates.waiting_for_api_id)
-    await callback.answer()
-
-
-@router.message(AccountSetupStates.waiting_for_api_id)
-async def process_api_id(message: Message, state: FSMContext):
-    """API ID ni qabul qilish."""
-    try:
-        api_id = int(message.text.strip())
-        await state.update_data(api_id=api_id)
-
-        await message.answer(
-            "✅ API ID qabul qilindi!\n\n"
-            "Endi *API Hash* ni yuboring:",
-            parse_mode="Markdown",
-            reply_markup=cancel_keyboard()
-        )
-        await state.set_state(AccountSetupStates.waiting_for_api_hash)
-
-    except ValueError:
-        await message.answer(
-            "❌ Xato! API ID raqam bo'lishi kerak.\n\n"
-            "Qaytadan yuboring:",
-            reply_markup=cancel_keyboard()
-        )
-
-
-@router.message(AccountSetupStates.waiting_for_api_hash)
-async def process_api_hash(message: Message, state: FSMContext):
-    """API Hash ni qabul qilish."""
-    api_hash = message.text.strip()
-    data = await state.get_data()
-
-    # Validate credentials format
-    if not validate_api_credentials(str(data['api_id']), api_hash):
-        await message.answer(
-            "❌ API credentials formati noto'g'ri.\n\n"
-            "API Hash 32 ta hex belgi bo'lishi kerak.\n\n"
-            "Qaytadan yuboring:",
-            reply_markup=cancel_keyboard()
-        )
-        return
-
-    await state.update_data(api_hash=api_hash)
-
-    await message.answer(
-        "✅ API Hash qabul qilindi!\n\n"
-        "Endi telefon raqamingizni yuboring.\n"
+        "Telegram accountingizni ulash uchun telefon raqamingizni yuboring.\n\n"
         "Format: *+998901234567*\n\n"
         "Mamlakat kodi bilan (+) belgisi bilan:",
         parse_mode="Markdown",
         reply_markup=cancel_keyboard()
     )
     await state.set_state(AccountSetupStates.waiting_for_phone)
+    await callback.answer()
 
 
 @router.message(AccountSetupStates.waiting_for_phone)
@@ -157,13 +104,11 @@ async def process_phone(message: Message, state: FSMContext):
         )
         return
 
-    data = await state.get_data()
-
-    # Create temporary Telethon client to send code
+    # Create temporary Telethon client to send code (using global API credentials)
     client = TelegramClient(
         StringSession(),
-        data['api_id'],
-        data['api_hash']
+        settings.API_ID,
+        settings.API_HASH
     )
 
     try:
@@ -216,11 +161,11 @@ async def process_code(message: Message, state: FSMContext):
     code = message.text.strip().replace("-", "").replace(" ", "")
     data = await state.get_data()
 
-    # Recreate client
+    # Recreate client (using global API credentials)
     client = TelegramClient(
         StringSession(data['temp_session']),
-        data['api_id'],
-        data['api_hash']
+        settings.API_ID,
+        settings.API_HASH
     )
 
     try:
@@ -251,12 +196,12 @@ async def process_code(message: Message, state: FSMContext):
                         last_name=message.from_user.last_name
                     )
 
-                # Create account
+                # Create account (using global API credentials)
                 account = await account_repo.create(
                     user_id=user.id,
                     phone_number=data['phone'],
-                    api_id=data['api_id'],
-                    api_hash=data['api_hash'],
+                    api_id=settings.API_ID,
+                    api_hash=settings.API_HASH,
                     session_string=session_string,
                     is_authorized=True,
                     is_active=True
@@ -309,11 +254,11 @@ async def process_password(message: Message, state: FSMContext):
     password = message.text.strip()
     data = await state.get_data()
 
-    # Recreate client
+    # Recreate client (using global API credentials)
     client = TelegramClient(
         StringSession(data['temp_session']),
-        data['api_id'],
-        data['api_hash']
+        settings.API_ID,
+        settings.API_HASH
     )
 
     try:
@@ -341,12 +286,12 @@ async def process_password(message: Message, state: FSMContext):
                     last_name=message.from_user.last_name
                 )
 
-            # Create account
+            # Create account (using global API credentials)
             await account_repo.create(
                 user_id=user.id,
                 phone_number=data['phone'],
-                api_id=data['api_id'],
-                api_hash=data['api_hash'],
+                api_id=settings.API_ID,
+                api_hash=settings.API_HASH,
                 session_string=session_string,
                 is_authorized=True,
                 is_active=True

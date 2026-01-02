@@ -38,39 +38,24 @@ class Settings(BaseSettings):
     )
 
     # =============================================================================
-    # Database (PostgreSQL)
+    # Database (PostgreSQL or SQLite)
     # =============================================================================
     DATABASE_URL: str = Field(
-        description="PostgreSQL connection URL"
+        description="Database connection URL (PostgreSQL or SQLite)"
     )
     DB_POOL_SIZE: int = Field(default=10, ge=1, le=100, description="Connection pool size")
     DB_MAX_OVERFLOW: int = Field(default=20, ge=0, le=100, description="Max overflow connections")
     DB_POOL_TIMEOUT: int = Field(default=30, ge=1, description="Pool timeout in seconds")
     DB_ECHO: bool = Field(default=False, description="Echo SQL queries (debugging)")
 
-    @field_validator("DATABASE_URL")
-    @classmethod
-    def validate_database_url(cls, v: str) -> str:
-        """Ensure database URL is for PostgreSQL with asyncpg driver."""
-        if not v.startswith("postgresql+asyncpg://"):
-            raise ValueError("DATABASE_URL must use asyncpg driver: postgresql+asyncpg://...")
-        return v
-
     # =============================================================================
-    # Redis
+    # Redis (Optional)
     # =============================================================================
-    REDIS_URL: str = Field(
-        description="Redis connection URL"
+    REDIS_URL: Optional[str] = Field(
+        default=None,
+        description="Redis connection URL (optional, for caching)"
     )
     REDIS_MAX_CONNECTIONS: int = Field(default=50, ge=1, le=200, description="Max Redis connections")
-
-    @field_validator("REDIS_URL")
-    @classmethod
-    def validate_redis_url(cls, v: str) -> str:
-        """Ensure Redis URL format is correct."""
-        if not v.startswith("redis://"):
-            raise ValueError("REDIS_URL must start with redis://")
-        return v
 
     # =============================================================================
     # Telegram Bot
@@ -85,6 +70,20 @@ class Settings(BaseSettings):
         """Validate bot token format."""
         if not v or ":" not in v:
             raise ValueError("BOT_TOKEN must be in format: 123456:ABC-DEF...")
+        return v
+
+    # =============================================================================
+    # Telegram API Credentials (for all user accounts)
+    # =============================================================================
+    API_ID: int = Field(description="Telegram API ID from my.telegram.org")
+    API_HASH: str = Field(description="Telegram API Hash from my.telegram.org")
+
+    @field_validator("API_HASH")
+    @classmethod
+    def validate_api_hash(cls, v: str) -> str:
+        """Validate API hash format."""
+        if not v or len(v) != 32:
+            raise ValueError("API_HASH must be 32 characters long")
         return v
 
     # =============================================================================
