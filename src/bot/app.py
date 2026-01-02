@@ -28,7 +28,6 @@ class GroupPulseBot:
         # Create bot instance
         self.bot = Bot(
             token=settings.BOT_TOKEN,
-            parse_mode=ParseMode.HTML
         )
 
         # Create storage (memory for now, can switch to Redis)

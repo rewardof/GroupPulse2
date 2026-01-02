@@ -86,11 +86,6 @@ class User(Base):
         "ForwardingRule", back_populates="user", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (
-        Index("idx_users_telegram_id", "telegram_id"),
-        Index("idx_users_is_active", "is_active", postgresql_where=(Column("is_active") == True)),
-    )
-
     def __repr__(self) -> str:
         return f"<User id={self.id} telegram_id={self.telegram_id} username={self.username}>"
 
@@ -148,13 +143,6 @@ class TelegramAccount(Base):
         "MessageLog", back_populates="account", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (
-        Index("idx_accounts_user_id", "user_id"),
-        Index("idx_accounts_is_active", "is_active", postgresql_where=(Column("is_active") == True)),
-        Index("idx_accounts_flood_wait", "flood_wait_until",
-              postgresql_where=(Column("flood_wait_until") > func.now())),
-    )
-
     def __repr__(self) -> str:
         return f"<TelegramAccount id={self.id} user_id={self.user_id} phone={self.phone_number}>"
 
@@ -206,14 +194,6 @@ class Group(Base):
         "MessageLog", back_populates="source_group", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (
-        Index("idx_groups_account_id", "account_id"),
-        Index("idx_groups_telegram_id", "telegram_id"),
-        Index("idx_groups_type", "group_type"),
-        Index("idx_groups_is_active", "is_active", postgresql_where=(Column("is_active") == True)),
-        Index("idx_groups_unique_account_telegram", "account_id", "telegram_id", unique=True),
-    )
-
     def __repr__(self) -> str:
         return f"<Group id={self.id} title={self.title} type={self.group_type}>"
 
@@ -253,11 +233,6 @@ class Keyword(Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="keywords")
-
-    __table_args__ = (
-        Index("idx_keywords_user_id", "user_id"),
-        Index("idx_keywords_is_active", "is_active", postgresql_where=(Column("is_active") == True)),
-    )
 
     def __repr__(self) -> str:
         return f"<Keyword id={self.id} keyword={self.keyword} regex={self.is_regex}>"
@@ -332,15 +307,6 @@ class ForwardingRule(Base):
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="forwarding_rules")
 
-    __table_args__ = (
-        Index("idx_rules_user_id", "user_id"),
-        Index("idx_rules_is_active", "is_active", postgresql_where=(Column("is_active") == True)),
-        Index("idx_rules_priority", "priority"),
-        # GIN indexes for array searches
-        Index("idx_rules_source_groups", "source_group_ids", postgresql_using="gin"),
-        Index("idx_rules_dest_groups", "destination_group_ids", postgresql_using="gin"),
-        Index("idx_rules_keywords", "keyword_ids", postgresql_using="gin"),
-    )
 
     def __repr__(self) -> str:
         return f"<ForwardingRule id={self.id} name={self.name} priority={self.priority}>"
@@ -396,20 +362,6 @@ class MessageLog(Base):
     # Relationships
     account: Mapped["TelegramAccount"] = relationship("TelegramAccount", back_populates="message_logs")
     source_group: Mapped["Group"] = relationship("Group", back_populates="message_logs")
-
-    __table_args__ = (
-        Index("idx_msg_log_account_id", "account_id"),
-        Index("idx_msg_log_source_group", "source_group_id"),
-        Index("idx_msg_log_message_hash", "message_hash"),
-        Index("idx_msg_log_received_at", "received_at"),
-        # Unique constraint for deduplication (1 hour window)
-        Index(
-            "idx_msg_log_dedup",
-            "account_id", "source_group_id", "message_id",
-            unique=True,
-            postgresql_where=(Column("received_at") > func.now() - func.make_interval(0, 0, 0, 0, 1))
-        ),
-    )
 
     def __repr__(self) -> str:
         return f"<MessageLog id={self.id} message_id={self.message_id} forwarded={self.was_forwarded}>"
