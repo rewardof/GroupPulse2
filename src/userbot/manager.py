@@ -6,7 +6,7 @@ Manages all userbot instances, monitors accounts, and handles message forwarding
 
 import asyncio
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple, List
 from datetime import datetime
 
 from telethon import TelegramClient, events
@@ -37,7 +37,7 @@ class UserbotManager:
         """Initialize userbot manager."""
         self.clients: Dict[int, TelegramClient] = {}  # account_id -> client
         self.destination_groups: Dict[int, int] = {}  # account_id -> destination_group_telegram_id
-        self.rule_matchers: Dict[int, RuleMatcher] = {}  # user_id -> RuleMatcher
+        self.rule_matchers: Dict[int, Tuple] = {}  # user_id -> (RuleMatcher, keywords_list)
         self._running = False
         self._monitor_task: Optional[asyncio.Task] = None
 
@@ -161,12 +161,12 @@ class UserbotManager:
                 return
 
             # Get user's rules and keywords
-            rule_matcher = await self._create_rule_matcher(user.id)
+            rule_matcher, keywords = await self._create_rule_matcher(user.id)
 
             # Store
             self.clients[account.id] = client
             self.destination_groups[account.id] = destination_group.telegram_id
-            self.rule_matchers[user.id] = rule_matcher
+            self.rule_matchers[user.id] = (rule_matcher, keywords)
 
             # Register message handler - listens to ALL groups
             @client.on(events.NewMessage())
@@ -182,7 +182,7 @@ class UserbotManager:
         except Exception as e:
             logger.error(f"Failed to start userbot for account {account.id}: {e}", exc_info=True)
 
-    async def _create_rule_matcher(self, user_id: int) -> RuleMatcher:
+    async def _create_rule_matcher(self, user_id: int) -> Tuple[RuleMatcher, List]:
         """
         Create rule matcher for user.
 
@@ -190,7 +190,7 @@ class UserbotManager:
             user_id: User ID
 
         Returns:
-            RuleMatcher instance
+            Tuple of (RuleMatcher instance, list of Keyword objects for matching)
         """
         try:
             async with get_async_session() as session:
@@ -200,30 +200,39 @@ class UserbotManager:
                 # Get active rules
                 rules = await rule_repo.get_multi(user_id=user_id, is_active=True, limit=100)
 
-                # Get keywords
-                keywords = await keyword_repo.get_multi(user_id=user_id, limit=1000)
+                # Get all keywords
+                db_keywords = await keyword_repo.get_multi(user_id=user_id, limit=1000)
 
-                # Create matcher
-                rule_matcher = RuleMatcher()
-
+                # Collect all keyword IDs from active rules
+                keyword_ids_in_rules = set()
                 for rule in rules:
-                    # Get keywords for this rule
-                    rule_keywords = [kw for kw in keywords if kw.id in rule.keyword_ids]
+                    if rule.keyword_ids:
+                        keyword_ids_in_rules.update(rule.keyword_ids)
 
-                    # Add to matcher
-                    # Note: We don't have source_group_ids anymore, so all rules apply to all groups
-                    for keyword in rule_keywords:
-                        rule_matcher.add_pattern(
-                            keyword.keyword,
-                            is_regex=keyword.is_regex,
-                            is_case_sensitive=keyword.is_case_sensitive
+                # Convert to RuleMatcher Keyword objects
+                from src.core.rule_matcher import Keyword as MatcherKeyword
+
+                matcher_keywords = []
+                for db_kw in db_keywords:
+                    if db_kw.id in keyword_ids_in_rules or not keyword_ids_in_rules:
+                        matcher_keywords.append(
+                            MatcherKeyword(
+                                id=db_kw.id,
+                                keyword=db_kw.keyword,
+                                is_regex=db_kw.is_regex,
+                                is_case_sensitive=db_kw.is_case_sensitive
+                            )
                         )
 
-                return rule_matcher
+                # Create matcher and preload keywords
+                rule_matcher = RuleMatcher()
+                rule_matcher.preload_keywords(matcher_keywords)
+
+                return rule_matcher, matcher_keywords
 
         except Exception as e:
             logger.error(f"Error creating rule matcher for user {user_id}: {e}", exc_info=True)
-            return RuleMatcher()
+            return RuleMatcher(), []
 
     async def _handle_message(self, event: events.NewMessage.Event, account_id: int, user_id: int):
         """
@@ -241,14 +250,21 @@ class UserbotManager:
             if not message.text:
                 return
 
-            # Get rule matcher
-            rule_matcher = self.rule_matchers.get(user_id)
-            if not rule_matcher:
+            # Get rule matcher and keywords
+            matcher_data = self.rule_matchers.get(user_id)
+            if not matcher_data:
                 return
 
-            # Check if message matches any keywords
-            if not rule_matcher.match_message(message.text):
-                return
+            rule_matcher, keywords = matcher_data
+
+            # If no keywords, forward everything (rule without keywords)
+            if not keywords:
+                # No keywords = forward all messages
+                pass  # Continue to forwarding
+            else:
+                # Check if message matches any keywords
+                if not rule_matcher.match_keywords(message.text, keywords, require_all=False):
+                    return  # No match, skip
 
             # Get destination group
             destination_telegram_id = self.destination_groups.get(account_id)
@@ -294,8 +310,8 @@ class UserbotManager:
             user_id: User ID
         """
         try:
-            rule_matcher = await self._create_rule_matcher(user_id)
-            self.rule_matchers[user_id] = rule_matcher
+            rule_matcher, keywords = await self._create_rule_matcher(user_id)
+            self.rule_matchers[user_id] = (rule_matcher, keywords)
             logger.info(f"✓ Reloaded rules for user {user_id}")
         except Exception as e:
             logger.error(f"Error reloading rules for user {user_id}: {e}", exc_info=True)
