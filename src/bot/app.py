@@ -9,7 +9,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.enums import ParseMode
 from config.settings import settings
-from src.bot.handlers import start
+from src.bot.handlers import start, account, groups, keywords, rules
 import asyncio
 import logging
 
@@ -44,11 +44,17 @@ class GroupPulseBot:
         # Start and help handlers
         self.dp.include_router(start.router)
 
-        # TODO: Add more handlers when created
-        # self.dp.include_router(account.router)
-        # self.dp.include_router(groups.router)
-        # self.dp.include_router(keywords.router)
-        # self.dp.include_router(rules.router)
+        # Account management
+        self.dp.include_router(account.router)
+
+        # Groups management
+        self.dp.include_router(groups.router)
+
+        # Keywords management
+        self.dp.include_router(keywords.router)
+
+        # Forwarding rules
+        self.dp.include_router(rules.router)
 
         logger.info("✓ Bot handlers registered")
 
