@@ -175,7 +175,11 @@ async def process_code(message: Message, state: FSMContext):
 
         # Try to sign in
         try:
-            await client.sign_in(data['phone'], code)
+            await client.sign_in(
+                data['phone'],
+                code,
+                phone_code_hash=data['phone_code_hash']
+            )
 
             # Success! Save to database
             session_string = client.session.save()
