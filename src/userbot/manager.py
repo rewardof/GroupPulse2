@@ -274,6 +274,12 @@ class UserbotManager:
             if not message.text:
                 return
 
+            # ✅ Skip messages from bots
+            sender = event.message.sender
+            if sender and getattr(sender, 'bot', False):
+                logger.debug(f"Skipping bot message from {getattr(sender, 'username', 'unknown')}")
+                return
+
             # Get rule matcher and keywords
             matcher_data = self.rule_matchers.get(user_id)
             if not matcher_data:
