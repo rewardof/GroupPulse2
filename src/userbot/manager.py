@@ -277,27 +277,75 @@ class UserbotManager:
             if not client:
                 return
 
-            # Forward message
+            # Send message (copy instead of forward)
             try:
                 # Get source chat info
                 source_chat = await event.get_chat()
                 source_title = getattr(source_chat, 'title', 'Unknown')
 
-                # Forward message
-                await client.forward_messages(
-                    destination_telegram_id,
-                    message
+                # Get sender info
+                sender = await event.get_sender()
+                sender_username = getattr(sender, 'username', None)
+                sender_name = None
+
+                if sender_username:
+                    sender_display = f"@{sender_username}"
+                else:
+                    # Use first name or "Unknown"
+                    first_name = getattr(sender, 'first_name', None)
+                    last_name = getattr(sender, 'last_name', None)
+                    if first_name:
+                        sender_name = first_name
+                        if last_name:
+                            sender_name += f" {last_name}"
+                        sender_display = sender_name
+                    else:
+                        sender_display = "Noma'lum foydalanuvchi"
+
+                # Get message link
+                message_link = None
+                if hasattr(source_chat, 'username') and source_chat.username:
+                    # Public group - create link
+                    message_link = f"https://t.me/{source_chat.username}/{message.id}"
+                else:
+                    # Private group - can't create link
+                    message_link = None
+
+                # Format new message
+                formatted_text = "❗️ Yangi e'lon topildi!\n\n"
+                formatted_text += f"👤 Foydalanuvchi: {sender_display}\n"
+
+                if message_link:
+                    formatted_text += f"📍 Guruhdan: [{source_title}]({message_link})\n\n"
+                else:
+                    formatted_text += f"📍 Guruhdan: {source_title}\n\n"
+
+                formatted_text += f"Original xabar:\n{message.text}"
+
+                # Get destination entity
+                try:
+                    destination_entity = await client.get_entity(destination_telegram_id)
+                except Exception as e:
+                    logger.error(f"Failed to get destination entity: {e}")
+                    # Try using the ID directly
+                    destination_entity = destination_telegram_id
+
+                # Send message
+                await client.send_message(
+                    destination_entity,
+                    formatted_text,
+                    parse_mode='markdown'
                 )
 
                 logger.info(
-                    f"✅ Forwarded: '{message.text[:50]}...' "
+                    f"✅ Sent: '{message.text[:50]}...' "
                     f"from {source_title} to destination"
                 )
 
                 # TODO: Update statistics in database
 
             except Exception as e:
-                logger.error(f"Error forwarding message: {e}", exc_info=True)
+                logger.error(f"Error sending message: {e}", exc_info=True)
 
         except Exception as e:
             logger.error(f"Error handling message: {e}", exc_info=True)
