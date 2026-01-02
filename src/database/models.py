@@ -32,12 +32,6 @@ class Base(DeclarativeBase):
 
 
 # Enums
-class GroupType(str, enum.Enum):
-    """Group type enumeration."""
-    SOURCE = "source"
-    DESTINATION = "destination"
-
-
 class RuleAction(str, enum.Enum):
     """Forwarding rule action enumeration."""
     FORWARD = "forward"
@@ -153,22 +147,22 @@ class TelegramAccount(Base):
 
 class Group(Base):
     """
-    Telegram group/channel model.
+    Destination group model.
 
-    Groups can be either SOURCE (listen to) or DESTINATION (forward to).
+    Each account can have only ONE destination group where messages are forwarded.
+    The userbot listens to ALL groups in the account automatically.
     """
     __tablename__ = "groups"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     account_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("telegram_accounts.id", ondelete="CASCADE"), nullable=False
+        BigInteger, ForeignKey("telegram_accounts.id", ondelete="CASCADE"), unique=True, nullable=False
     )
 
     telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     access_hash: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    group_type: Mapped[GroupType] = mapped_column(Enum(GroupType), nullable=False)
 
     # Monitoring
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -195,7 +189,7 @@ class Group(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Group id={self.id} title={self.title} type={self.group_type}>"
+        return f"<Group id={self.id} title={self.title} account_id={self.account_id}>"
 
 
 # =============================================================================
@@ -246,7 +240,9 @@ class ForwardingRule(Base):
     """
     Forwarding rule model - defines message forwarding logic.
 
-    Uses PostgreSQL arrays for many-to-many relationships with groups and keywords.
+    Listens to ALL groups in the user's account.
+    Forwards to the account's single destination group.
+    Uses keyword filters to match messages.
     """
     __tablename__ = "forwarding_rules"
 
@@ -257,10 +253,6 @@ class ForwardingRule(Base):
 
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    # Sources and destinations (array of IDs)
-    source_group_ids: Mapped[List[int]] = mapped_column(ARRAY(BIGINT), nullable=False)
-    destination_group_ids: Mapped[List[int]] = mapped_column(ARRAY(BIGINT), nullable=False)
 
     # Filtering (keyword IDs)
     keyword_ids: Mapped[List[int]] = mapped_column(ARRAY(BIGINT), nullable=False, default=list)

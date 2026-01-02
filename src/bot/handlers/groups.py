@@ -1,7 +1,8 @@
 """
 Group Management Handlers
 
-Source va destination groups qo'shish, ko'rish, o'chirish.
+Destination group qo'shish, ko'rish, o'chirish.
+Userbot accountning BARCHA grouplaridan avtomatik listen qiladi.
 """
 
 from aiogram import Router, F
@@ -12,12 +13,11 @@ from src.bot.keyboards.main import group_menu_keyboard, main_menu_keyboard, canc
 from src.database.connection import get_async_session
 from src.database.repositories.base import BaseRepository
 from src.database.repositories.account_repo import AccountRepository
-from src.database.models import User, TelegramAccount, Group, GroupType
-from src.utils.validators import validate_telegram_id, validate_telegram_username
+from src.database.models import User, TelegramAccount, Group
+from src.utils.validators import validate_telegram_id
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.tl.functions.messages import GetDialogsRequest
-from telethon.tl.types import InputPeerEmpty
+from config.settings import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -34,52 +34,12 @@ async def callback_groups_menu(callback: CallbackQuery):
     """Groups menu."""
     await callback.message.edit_text(
         "📱 *Group Management*\n\n"
-        "Source Groups: Eshitish uchun\n"
-        "Destination Groups: Forward qilish uchun\n\n"
+        "🤖 Bot sizning accountingizdagi *barcha* grouplardan listen qiladi.\n\n"
+        "📤 *Destination Group* - Forward qilinadigan group (faqat 1ta).\n\n"
         "Nima qilmoqchisiz?",
         parse_mode="Markdown",
         reply_markup=group_menu_keyboard()
     )
-    await callback.answer()
-
-
-# =============================================================================
-# Add Source Group
-# =============================================================================
-
-@router.callback_query(F.data == "group_add_source")
-async def callback_add_source_group(callback: CallbackQuery, state: FSMContext):
-    """Source group qo'shishni boshlash."""
-    user_id = callback.from_user.id
-
-    # Check if user has account
-    async with get_async_session() as session:
-        user_repo = BaseRepository(User, session)
-        account_repo = AccountRepository(session)
-
-        users = await user_repo.get_multi(telegram_id=user_id, limit=1)
-        if not users:
-            await callback.answer("Avval account qo'shing!", show_alert=True)
-            return
-
-        account = await account_repo.get_by_user_id(users[0].id)
-        if not account:
-            await callback.answer("Avval account qo'shing!", show_alert=True)
-            return
-
-    await state.update_data(group_type="source")
-
-    await callback.message.edit_text(
-        "➕ *Source Group Qo'shish*\n\n"
-        "Source group - siz eshitmoqchi bo'lgan group.\n\n"
-        "Group ID yoki username yuboring:\n"
-        "• Username: @groupname\n"
-        "• ID: -1001234567890\n\n"
-        "Yoki botni groupga qo'shib, /start yuboring.",
-        parse_mode="Markdown",
-        reply_markup=cancel_keyboard()
-    )
-    await state.set_state(GroupSetupStates.waiting_for_group_id)
     await callback.answer()
 
 
@@ -96,6 +56,7 @@ async def callback_add_dest_group(callback: CallbackQuery, state: FSMContext):
     async with get_async_session() as session:
         user_repo = BaseRepository(User, session)
         account_repo = AccountRepository(session)
+        group_repo = BaseRepository(Group, session)
 
         users = await user_repo.get_multi(telegram_id=user_id, limit=1)
         if not users:
@@ -107,11 +68,19 @@ async def callback_add_dest_group(callback: CallbackQuery, state: FSMContext):
             await callback.answer("Avval account qo'shing!", show_alert=True)
             return
 
-    await state.update_data(group_type="destination")
+        # Check if already has destination group
+        existing_group = await group_repo.get_multi(account_id=account.id, limit=1)
+        if existing_group:
+            await callback.answer(
+                "Sizda allaqachon destination group bor!\n"
+                "Avval uni o'chiring, keyin yangisini qo'shing.",
+                show_alert=True
+            )
+            return
 
     await callback.message.edit_text(
         "➕ *Destination Group Qo'shish*\n\n"
-        "Destination group - forward qilinadigan group.\n\n"
+        "Bu yerga forward qilinadi.\n\n"
         "Group ID yoki username yuboring:\n"
         "• Username: @groupname\n"
         "• ID: -1001234567890",
@@ -130,8 +99,6 @@ async def callback_add_dest_group(callback: CallbackQuery, state: FSMContext):
 async def process_group_id(message: Message, state: FSMContext):
     """Group ID yoki username qabul qilish."""
     input_text = message.text.strip()
-    data = await state.get_data()
-    group_type = data.get('group_type', 'source')
 
     # Get user account
     async with get_async_session() as session:
@@ -151,11 +118,23 @@ async def process_group_id(message: Message, state: FSMContext):
             await state.clear()
             return
 
+        # Check if already has destination group
+        existing_group = await group_repo.get_multi(account_id=account.id, limit=1)
+        if existing_group:
+            await message.answer(
+                "⚠️ Sizda allaqachon destination group bor!\n\n"
+                f"📱 {existing_group[0].title}\n\n"
+                "Avval uni o'chiring.",
+                reply_markup=main_menu_keyboard()
+            )
+            await state.clear()
+            return
+
         # Create Telethon client
         client = TelegramClient(
             StringSession(account.session_string),
-            account.api_id,
-            account.api_hash
+            settings.API_ID,
+            settings.API_HASH
         )
 
         try:
@@ -181,22 +160,6 @@ async def process_group_id(message: Message, state: FSMContext):
                         )
                         return
 
-                # Check if group already exists
-                existing = await group_repo.get_multi(
-                    account_id=account.id,
-                    telegram_id=entity.id,
-                    limit=1
-                )
-                if existing:
-                    await message.answer(
-                        f"⚠️ Bu group allaqachon qo'shilgan!\n\n"
-                        f"📱 {entity.title}\n"
-                        f"🆔 {entity.id}",
-                        reply_markup=main_menu_keyboard()
-                    )
-                    await state.clear()
-                    return
-
                 # Add group to database
                 group = await group_repo.create(
                     account_id=account.id,
@@ -204,7 +167,6 @@ async def process_group_id(message: Message, state: FSMContext):
                     access_hash=getattr(entity, 'access_hash', None),
                     title=entity.title,
                     username=getattr(entity, 'username', None),
-                    group_type=GroupType.SOURCE if group_type == 'source' else GroupType.DESTINATION,
                     is_active=True,
                     member_count=getattr(entity, 'participants_count', None),
                     is_verified=getattr(entity, 'verified', False)
@@ -212,15 +174,13 @@ async def process_group_id(message: Message, state: FSMContext):
 
                 await session.commit()
 
-                type_emoji = "📥" if group_type == 'source' else "📤"
-                type_name = "Source" if group_type == 'source' else "Destination"
-
                 await message.answer(
-                    f"✅ *Group qo'shildi!*\n\n"
-                    f"{type_emoji} Type: {type_name}\n"
-                    f"📱 Nom: {entity.title}\n"
+                    f"✅ *Destination Group qo'shildi!*\n\n"
+                    f"📤 {entity.title}\n"
                     f"🆔 ID: {entity.id}\n"
-                    f"👥 A'zolar: {getattr(entity, 'participants_count', 'N/A')}",
+                    f"👥 A'zolar: {getattr(entity, 'participants_count', 'N/A')}\n\n"
+                    "🤖 Bot accountingizdagi *barcha* grouplardan listen qiladi.\n"
+                    "📨 Keywordlarga mos kelgan messagelar bu groupga forward qilinadi.",
                     parse_mode="Markdown",
                     reply_markup=main_menu_keyboard()
                 )
@@ -252,12 +212,12 @@ async def process_group_id(message: Message, state: FSMContext):
 
 
 # =============================================================================
-# List Groups
+# View Destination Group
 # =============================================================================
 
 @router.callback_query(F.data == "group_list")
 async def callback_list_groups(callback: CallbackQuery):
-    """Barcha grouplarni ko'rsatish."""
+    """Destination groupni ko'rsatish."""
     user_id = callback.from_user.id
 
     async with get_async_session() as session:
@@ -275,40 +235,31 @@ async def callback_list_groups(callback: CallbackQuery):
             await callback.answer("Account topilmadi!", show_alert=True)
             return
 
-        # Get all groups
-        groups = await group_repo.get_multi(account_id=account.id, limit=100)
+        # Get destination group
+        groups = await group_repo.get_multi(account_id=account.id, limit=1)
 
         if not groups:
             await callback.message.edit_text(
-                "📱 Hali hech qanday group qo'shilmagan.\n\n"
-                "Groups qo'shish uchun:\n"
-                "➕ Add Source/Destination",
+                "📱 Hali destination group qo'shilmagan.\n\n"
+                "Destination group qo'shish uchun:\n"
+                "➕ Add Destination",
                 reply_markup=group_menu_keyboard()
             )
             await callback.answer()
             return
 
-        # Separate by type
-        source_groups = [g for g in groups if g.group_type == GroupType.SOURCE]
-        dest_groups = [g for g in groups if g.group_type == GroupType.DESTINATION]
+        group = groups[0]
+        status = "🟢" if group.is_active else "🔴"
 
-        text = "📱 *Your Groups*\n\n"
-
-        if source_groups:
-            text += "📥 *Source Groups:*\n"
-            for g in source_groups:
-                status = "🟢" if g.is_active else "🔴"
-                text += f"{status} {g.title}\n   ID: `{g.telegram_id}`\n"
-            text += "\n"
-
-        if dest_groups:
-            text += "📤 *Destination Groups:*\n"
-            for g in dest_groups:
-                status = "🟢" if g.is_active else "🔴"
-                text += f"{status} {g.title}\n   ID: `{g.telegram_id}`\n"
-            text += "\n"
-
-        text += f"\n*Total:* {len(groups)} groups"
+        text = (
+            f"📱 *Destination Group*\n\n"
+            f"{status} {group.title}\n"
+            f"🆔 ID: `{group.telegram_id}`\n"
+            f"👥 A'zolar: {group.member_count or 'N/A'}\n"
+            f"📨 Forward: {group.total_messages_forwarded}\n\n"
+            f"🤖 Bot accountingizdagi *barcha* grouplardan listen qiladi.\n"
+            f"📤 Keywordlarga mos messagelar bu groupga forward qilinadi."
+        )
 
         await callback.message.edit_text(
             text,
@@ -320,12 +271,12 @@ async def callback_list_groups(callback: CallbackQuery):
 
 
 # =============================================================================
-# Remove Group
+# Remove Destination Group
 # =============================================================================
 
 @router.callback_query(F.data == "group_remove")
-async def callback_remove_group_start(callback: CallbackQuery, state: FSMContext):
-    """Group o'chirishni boshlash."""
+async def callback_remove_group(callback: CallbackQuery):
+    """Destination groupni o'chirish."""
     user_id = callback.from_user.id
 
     async with get_async_session() as session:
@@ -343,39 +294,40 @@ async def callback_remove_group_start(callback: CallbackQuery, state: FSMContext
             await callback.answer("Account topilmadi!", show_alert=True)
             return
 
-        # Get all groups
-        groups = await group_repo.get_multi(account_id=account.id, limit=100)
+        # Get destination group
+        groups = await group_repo.get_multi(account_id=account.id, limit=1)
 
         if not groups:
-            await callback.answer("Hech qanday group yo'q!", show_alert=True)
+            await callback.answer("Destination group yo'q!", show_alert=True)
             return
 
-        # Create inline keyboard with groups
-        keyboard = []
-        for g in groups:
-            type_emoji = "📥" if g.group_type == GroupType.SOURCE else "📤"
-            keyboard.append([
-                InlineKeyboardButton(
-                    text=f"{type_emoji} {g.title[:30]}",
-                    callback_data=f"remove_group_{g.id}"
-                )
-            ])
+        group = groups[0]
 
-        keyboard.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="menu_groups")])
+        # Confirm deletion
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Ha, o'chirish", callback_data=f"confirm_remove_group_{group.id}"),
+                InlineKeyboardButton(text="❌ Yo'q", callback_data="menu_groups")
+            ]
+        ])
 
         await callback.message.edit_text(
-            "🗑 *O'chirish uchun group tanlang:*",
+            f"⚠️ *Ogohantirish*\n\n"
+            f"Destination groupni o'chirmoqchisiz:\n\n"
+            f"📱 {group.title}\n"
+            f"🆔 {group.telegram_id}\n\n"
+            f"Ishonchingiz komilmi?",
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+            reply_markup=keyboard
         )
 
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("remove_group_"))
-async def callback_remove_group_confirm(callback: CallbackQuery):
-    """Group o'chirishni tasdiqlash."""
-    group_id = int(callback.data.split("_")[2])
+@router.callback_query(F.data.startswith("confirm_remove_group_"))
+async def callback_confirm_remove_group(callback: CallbackQuery):
+    """Destination group o'chirishni tasdiqlash."""
+    group_id = int(callback.data.split("_")[3])
 
     async with get_async_session() as session:
         group_repo = BaseRepository(Group, session)
@@ -390,7 +342,7 @@ async def callback_remove_group_confirm(callback: CallbackQuery):
         await session.commit()
 
         await callback.message.edit_text(
-            f"✅ *Group o'chirildi!*\n\n"
+            f"✅ *Destination group o'chirildi!*\n\n"
             f"📱 {group.title}\n"
             f"🆔 {group.telegram_id}",
             parse_mode="Markdown",

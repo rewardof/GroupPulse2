@@ -72,20 +72,21 @@ def group_menu_keyboard() -> InlineKeyboardMarkup:
     """
     Group management keyboard.
 
+    Only destination group (single) - userbot listens to all groups.
+
     Returns:
         InlineKeyboardMarkup: Group menu keyboard
     """
     builder = InlineKeyboardBuilder()
 
     builder.row(
-        InlineKeyboardButton(text="➕ Add Source", callback_data="group_add_source"),
         InlineKeyboardButton(text="➕ Add Destination", callback_data="group_add_dest")
     )
     builder.row(
-        InlineKeyboardButton(text="📋 List Groups", callback_data="group_list")
+        InlineKeyboardButton(text="📋 View Destination", callback_data="group_list")
     )
     builder.row(
-        InlineKeyboardButton(text="🗑 Remove Group", callback_data="group_remove")
+        InlineKeyboardButton(text="🗑 Remove Destination", callback_data="group_remove")
     )
     builder.row(
         InlineKeyboardButton(text="🔙 Back to Menu", callback_data="back_to_menu")
