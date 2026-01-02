@@ -5,6 +5,7 @@ Async SQLAlchemy engine and session management with connection pooling.
 """
 
 from typing import AsyncGenerator
+from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -97,6 +98,7 @@ def get_async_session_factory() -> async_sessionmaker[AsyncSession]:
     return _async_session_factory
 
 
+@asynccontextmanager
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     """
     Dependency injection for async database sessions.
