@@ -34,6 +34,11 @@ def validate_telegram_id(telegram_id: str) -> Optional[int]:
     """
     Validate and parse Telegram ID.
 
+    Telegram ID formats:
+    - User IDs: positive integers (e.g., 123456789)
+    - Group IDs: negative integers (e.g., -12345678)
+    - Supergroup/Channel IDs: negative integers starting with -100 (e.g., -1001234567890)
+
     Args:
         telegram_id: Telegram ID string
 
@@ -49,8 +54,9 @@ def validate_telegram_id(telegram_id: str) -> Optional[int]:
         # Parse as integer
         tid = int(cleaned)
 
-        # Telegram IDs are positive integers
-        if tid > 0:
+        # Telegram IDs can be positive (users) or negative (groups/channels)
+        # Just verify it's a valid integer
+        if tid != 0:
             return tid
 
         return None
