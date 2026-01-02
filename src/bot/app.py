@@ -23,8 +23,13 @@ class GroupPulseBot:
     Manages bot lifecycle, handlers, and middleware.
     """
 
-    def __init__(self):
-        """Initialize bot and dispatcher."""
+    def __init__(self, userbot_manager=None):
+        """
+        Initialize bot and dispatcher.
+
+        Args:
+            userbot_manager: Optional UserbotManager instance for auto-reload
+        """
         # Create bot instance
         self.bot = Bot(
             token=settings.BOT_TOKEN,
@@ -35,6 +40,9 @@ class GroupPulseBot:
 
         # Create dispatcher
         self.dp = Dispatcher(storage=self.storage)
+
+        # Store userbot_manager in workflow_data for access in handlers
+        self.dp.workflow_data.update(userbot_manager=userbot_manager)
 
         # Register handlers
         self._register_handlers()

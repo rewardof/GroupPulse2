@@ -227,7 +227,7 @@ async def callback_toggle_keyword(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data == "create_rule_with_keywords")
-async def callback_create_rule_with_keywords(callback: CallbackQuery, state: FSMContext):
+async def callback_create_rule_with_keywords(callback: CallbackQuery, state: FSMContext, userbot_manager=None):
     """Keywordlar bilan rule yaratish."""
     user_id = callback.from_user.id
     data = await state.get_data()
@@ -259,6 +259,11 @@ async def callback_create_rule_with_keywords(callback: CallbackQuery, state: FSM
 
         await session.commit()
 
+        # ✅ Reload rules in userbot manager
+        if userbot_manager:
+            await userbot_manager.reload_rules(users[0].id)
+            logger.info(f"Reloaded rules for user {users[0].id}")
+
         await callback.message.edit_text(
             f"✅ *Rule yaratildi!*\n\n"
             f"📝 Nom: {data['rule_name']}\n"
@@ -275,7 +280,7 @@ async def callback_create_rule_with_keywords(callback: CallbackQuery, state: FSM
 
 
 @router.callback_query(F.data == "create_rule_no_keywords")
-async def callback_create_rule_no_keywords(callback: CallbackQuery, state: FSMContext):
+async def callback_create_rule_no_keywords(callback: CallbackQuery, state: FSMContext, userbot_manager=None):
     """Keywordlarsiz rule yaratish."""
     user_id = callback.from_user.id
     data = await state.get_data()
@@ -300,6 +305,11 @@ async def callback_create_rule_no_keywords(callback: CallbackQuery, state: FSMCo
         )
 
         await session.commit()
+
+        # ✅ Reload rules in userbot manager
+        if userbot_manager:
+            await userbot_manager.reload_rules(users[0].id)
+            logger.info(f"Reloaded rules for user {users[0].id}")
 
         await callback.message.edit_text(
             f"✅ *Rule yaratildi!*\n\n"
@@ -421,7 +431,7 @@ async def callback_toggle_rule_start(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("do_toggle_rule_"))
-async def callback_do_toggle_rule(callback: CallbackQuery):
+async def callback_do_toggle_rule(callback: CallbackQuery, userbot_manager=None):
     """Rule ni toggle qilish."""
     rule_id = int(callback.data.split("_")[3])
 
@@ -433,9 +443,17 @@ async def callback_do_toggle_rule(callback: CallbackQuery):
             await callback.answer("Rule topilmadi!", show_alert=True)
             return
 
+        # Store user_id before toggle
+        user_id = rule.user_id
+
         # Toggle
         rule.is_active = not rule.is_active
         await session.commit()
+
+        # ✅ Reload rules in userbot manager
+        if userbot_manager:
+            await userbot_manager.reload_rules(user_id)
+            logger.info(f"Reloaded rules for user {user_id} after toggle")
 
         status = "🟢 Active" if rule.is_active else "🔴 Inactive"
 
@@ -498,7 +516,7 @@ async def callback_delete_rule_start(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("delete_rule_"))
-async def callback_delete_rule_confirm(callback: CallbackQuery):
+async def callback_delete_rule_confirm(callback: CallbackQuery, userbot_manager=None):
     """Rule o'chirishni tasdiqlash."""
     rule_id = int(callback.data.split("_")[2])
 
@@ -510,9 +528,17 @@ async def callback_delete_rule_confirm(callback: CallbackQuery):
             await callback.answer("Rule topilmadi!", show_alert=True)
             return
 
+        # Store user_id before deletion
+        user_id = rule.user_id
+
         # Delete rule
         await rule_repo.delete(rule_id)
         await session.commit()
+
+        # ✅ Reload rules in userbot manager
+        if userbot_manager:
+            await userbot_manager.reload_rules(user_id)
+            logger.info(f"Reloaded rules for user {user_id} after delete")
 
         await callback.message.edit_text(
             f"✅ *Rule o'chirildi!*\n\n"

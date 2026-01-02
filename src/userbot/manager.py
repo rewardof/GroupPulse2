@@ -415,3 +415,52 @@ class UserbotManager:
             logger.info(f"✓ Reloaded rules for user {user_id}")
         except Exception as e:
             logger.error(f"Error reloading rules for user {user_id}: {e}", exc_info=True)
+
+    async def reload_account_destination(self, account_id: int):
+        """
+        Reload destination group for an account.
+
+        Args:
+            account_id: Account ID
+        """
+        try:
+            async with get_async_session() as session:
+                group_repo = BaseRepository(Group, session)
+
+                # Get new destination group
+                dest_groups = await group_repo.get_multi(account_id=account_id, limit=1)
+
+                if not dest_groups:
+                    # No destination group - remove from cache
+                    if account_id in self.destination_groups:
+                        del self.destination_groups[account_id]
+                    if account_id in self.entity_cache:
+                        del self.entity_cache[account_id]
+                    logger.info(f"✓ Removed destination for account {account_id}")
+                    return
+
+                destination_group = dest_groups[0]
+
+                # Update destination group ID
+                self.destination_groups[account_id] = destination_group.telegram_id
+
+                # Update entity cache
+                client = self.clients.get(account_id)
+                if client:
+                    try:
+                        destination_entity = await client.get_entity(destination_group.telegram_id)
+                        self.entity_cache[account_id] = destination_entity
+                        logger.info(
+                            f"✓ Reloaded destination for account {account_id}: "
+                            f"{destination_group.title}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not cache entity, will try on next message: {e}")
+                        # Clear old cache
+                        if account_id in self.entity_cache:
+                            del self.entity_cache[account_id]
+                else:
+                    logger.warning(f"Client not found for account {account_id}")
+
+        except Exception as e:
+            logger.error(f"Error reloading destination for account {account_id}: {e}", exc_info=True)

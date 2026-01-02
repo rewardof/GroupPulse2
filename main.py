@@ -39,13 +39,13 @@ class GroupPulseApp:
         logger.info("=" * 60)
 
         try:
-            # Initialize bot
-            logger.info("📱 Initializing Bot (Control Panel)...")
-            self.bot = GroupPulseBot()
-
-            # Initialize userbot manager
+            # Initialize userbot manager first
             logger.info("🤖 Initializing Userbot Manager (Listener)...")
             self.userbot_manager = UserbotManager()
+
+            # Initialize bot with userbot_manager reference for auto-reload
+            logger.info("📱 Initializing Bot (Control Panel)...")
+            self.bot = GroupPulseBot(userbot_manager=self.userbot_manager)
 
             # Start both services
             bot_task = asyncio.create_task(self.bot.start(), name="bot")

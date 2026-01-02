@@ -126,7 +126,7 @@ async def process_keyword(message: Message, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("keyword_case_"))
-async def callback_keyword_case(callback: CallbackQuery, state: FSMContext):
+async def callback_keyword_case(callback: CallbackQuery, state: FSMContext, userbot_manager=None):
     """Case sensitivity tanlash."""
     is_case_sensitive = callback.data == "keyword_case_yes"
     data = await state.get_data()
@@ -154,6 +154,11 @@ async def callback_keyword_case(callback: CallbackQuery, state: FSMContext):
         )
 
         await session.commit()
+
+        # ✅ Reload keywords in userbot manager
+        if userbot_manager:
+            await userbot_manager.reload_rules(users[0].id)
+            logger.info(f"Reloaded keywords for user {users[0].id}")
 
         keyword_type = "Regex" if data['is_regex'] else "Literal"
         case_type = "Sensitive" if is_case_sensitive else "Insensitive"
@@ -275,7 +280,7 @@ async def callback_remove_keyword_start(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("remove_keyword_"))
-async def callback_remove_keyword_confirm(callback: CallbackQuery):
+async def callback_remove_keyword_confirm(callback: CallbackQuery, userbot_manager=None):
     """Keyword o'chirishni tasdiqlash."""
     keyword_id = int(callback.data.split("_")[2])
 
@@ -287,9 +292,17 @@ async def callback_remove_keyword_confirm(callback: CallbackQuery):
             await callback.answer("Keyword topilmadi!", show_alert=True)
             return
 
+        # Store user_id before deletion
+        user_id = keyword.user_id
+
         # Delete keyword
         await keyword_repo.delete(keyword_id)
         await session.commit()
+
+        # ✅ Reload keywords in userbot manager
+        if userbot_manager:
+            await userbot_manager.reload_rules(user_id)
+            logger.info(f"Reloaded keywords for user {user_id}")
 
         await callback.message.edit_text(
             f"✅ *Keyword o'chirildi!*\n\n"

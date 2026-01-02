@@ -96,7 +96,7 @@ async def callback_add_dest_group(callback: CallbackQuery, state: FSMContext):
 # =============================================================================
 
 @router.message(GroupSetupStates.waiting_for_group_id)
-async def process_group_id(message: Message, state: FSMContext):
+async def process_group_id(message: Message, state: FSMContext, userbot_manager=None):
     """Group ID yoki username qabul qilish."""
     input_text = message.text.strip()
 
@@ -173,6 +173,11 @@ async def process_group_id(message: Message, state: FSMContext):
                 )
 
                 await session.commit()
+
+                # ✅ Reload destination group in userbot manager
+                if userbot_manager:
+                    await userbot_manager.reload_account_destination(account.id)
+                    logger.info(f"Reloaded destination for account {account.id}")
 
                 await message.answer(
                     f"✅ *Destination Group qo'shildi!*\n\n"
@@ -325,7 +330,7 @@ async def callback_remove_group(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("confirm_remove_group_"))
-async def callback_confirm_remove_group(callback: CallbackQuery):
+async def callback_confirm_remove_group(callback: CallbackQuery, userbot_manager=None):
     """Destination group o'chirishni tasdiqlash."""
     group_id = int(callback.data.split("_")[3])
 
@@ -337,9 +342,17 @@ async def callback_confirm_remove_group(callback: CallbackQuery):
             await callback.answer("Group topilmadi!", show_alert=True)
             return
 
+        # Store account_id before deletion
+        account_id = group.account_id
+
         # Delete group
         await group_repo.delete(group_id)
         await session.commit()
+
+        # ✅ Reload destination group in userbot manager
+        if userbot_manager:
+            await userbot_manager.reload_account_destination(account_id)
+            logger.info(f"Removed destination for account {account_id}")
 
         await callback.message.edit_text(
             f"✅ *Destination group o'chirildi!*\n\n"
