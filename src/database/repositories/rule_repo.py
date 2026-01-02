@@ -39,33 +39,9 @@ class RuleRepository(BaseRepository[ForwardingRule]):
         )
         return list(result.scalars().all())
 
-    async def get_rules_for_source_group(
-        self,
-        user_id: int,
-        source_group_id: int
-    ) -> List[ForwardingRule]:
-        """
-        Get active rules that apply to a specific source group.
-
-        Args:
-            user_id: User ID
-            source_group_id: Source group ID
-
-        Returns:
-            List[ForwardingRule]: List of matching rules
-        """
-        result = await self.session.execute(
-            select(ForwardingRule)
-            .where(
-                and_(
-                    ForwardingRule.user_id == user_id,
-                    ForwardingRule.is_active == True,
-                    ForwardingRule.source_group_ids.contains([source_group_id])
-                )
-            )
-            .order_by(ForwardingRule.priority.desc())
-        )
-        return list(result.scalars().all())
+    # NOTE: This method is no longer needed as rules listen to ALL groups
+    # Kept for reference, but not used in new architecture
+    # async def get_rules_for_source_group(...)
 
     async def toggle_rule(self, rule_id: int) -> Optional[ForwardingRule]:
         """
