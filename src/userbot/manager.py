@@ -6,7 +6,7 @@ Manages all userbot instances, monitors accounts, and handles message forwarding
 
 import asyncio
 import logging
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple, List, Any
 from datetime import datetime
 
 from telethon import TelegramClient, events
@@ -18,6 +18,8 @@ from src.database.repositories.base import BaseRepository
 from src.database.repositories.account_repo import AccountRepository
 from src.database.models import TelegramAccount, User, Group, Keyword, ForwardingRule
 from src.core.rule_matcher import RuleMatcher
+from src.core.rate_limiter import RateLimiter
+from telethon.errors import FloodWaitError
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,16 @@ class UserbotManager:
         self.rule_matchers: Dict[int, Tuple] = {}  # user_id -> (RuleMatcher, keywords_list)
         self._running = False
         self._monitor_task: Optional[asyncio.Task] = None
+
+        # Rate limiter - prevents FloodWait
+        self.rate_limiter = RateLimiter(
+            global_rate=settings.GLOBAL_RATE_LIMIT,
+            account_rate=settings.ACCOUNT_RATE_LIMIT,
+            destination_rate=settings.DESTINATION_RATE_LIMIT
+        )
+
+        # Entity cache - reduces network calls
+        self.entity_cache: Dict[int, Any] = {}  # account_id -> destination_entity
 
     async def start(self):
         """Start monitoring accounts and handling messages."""
@@ -173,6 +185,15 @@ class UserbotManager:
             async def message_handler(event):
                 await self._handle_message(event, account.id, user.id)
 
+            # Cache destination entity (reduces network calls)
+            try:
+                destination_entity = await client.get_entity(destination_group.telegram_id)
+                self.entity_cache[account.id] = destination_entity
+                logger.info(f"  ✓ Cached destination entity: {destination_group.title}")
+            except Exception as e:
+                logger.warning(f"  ⚠ Could not cache entity, will try on first message: {e}")
+                # Will be cached on first message send
+
             # Get account info
             me = await client.get_me()
             logger.info(f"  ✓ Connected: {me.first_name} (@{me.username})")
@@ -243,6 +264,9 @@ class UserbotManager:
             account_id: Account ID
             user_id: User ID
         """
+        # ⏱️ Start timestamp
+        received_at = datetime.utcnow()
+
         try:
             message: Message = event.message
 
@@ -277,14 +301,24 @@ class UserbotManager:
             if not client:
                 return
 
+            # ⏱️ Rate limit check
+            can_send = await self.rate_limiter.acquire(
+                account_id=account_id,
+                destination_id=destination_telegram_id
+            )
+
+            if not can_send:
+                logger.debug(f"Rate limited for account {account_id}, message skipped")
+                return
+
             # Send message (copy instead of forward)
             try:
-                # Get source chat info
-                source_chat = await event.get_chat()
+                # ✅ Get source chat info - NO network call, use event.chat directly
+                source_chat = event.chat
                 source_title = getattr(source_chat, 'title', 'Unknown')
 
-                # Get sender info
-                sender = await event.get_sender()
+                # ✅ Get sender info - NO network call, use event.message.sender directly
+                sender = event.message.sender
                 sender_username = getattr(sender, 'username', None)
                 sender_name = None
 
@@ -322,27 +356,45 @@ class UserbotManager:
 
                 formatted_text += f"Original xabar:\n{message.text}"
 
-                # Get destination entity
-                try:
-                    destination_entity = await client.get_entity(destination_telegram_id)
-                except Exception as e:
-                    logger.error(f"Failed to get destination entity: {e}")
-                    # Try using the ID directly
-                    destination_entity = destination_telegram_id
+                # ✅ Get destination entity from cache - reduces network calls
+                destination_entity = self.entity_cache.get(account_id)
+                if not destination_entity:
+                    # Not in cache, fetch and cache it
+                    try:
+                        destination_entity = await client.get_entity(destination_telegram_id)
+                        self.entity_cache[account_id] = destination_entity
+                        logger.debug(f"Cached destination entity for account {account_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to get destination entity: {e}")
+                        # Fallback: try using ID directly
+                        destination_entity = destination_telegram_id
 
-                # Send message
+                # ⏱️ Send message
+                send_start = datetime.utcnow()
+
                 await client.send_message(
                     destination_entity,
                     formatted_text,
                     parse_mode='markdown'
                 )
 
+                # ⏱️ Calculate delays
+                send_end = datetime.utcnow()
+                total_delay = (send_end - received_at).total_seconds()
+                send_duration = (send_end - send_start).total_seconds()
+
                 logger.info(
-                    f"✅ Sent: '{message.text[:50]}...' "
-                    f"from {source_title} to destination"
+                    f"✅ Sent in {total_delay:.2f}s (send: {send_duration:.2f}s): "
+                    f"'{message.text[:50]}...' from {source_title}"
                 )
 
-                # TODO: Update statistics in database
+            except FloodWaitError as e:
+                # ⚠️ FloodWait - inform rate limiter
+                self.rate_limiter.set_flood_wait(account_id, e.seconds)
+                logger.warning(
+                    f"⚠️ FloodWait: {e.seconds}s for account {account_id}. "
+                    f"Message will be delayed."
+                )
 
             except Exception as e:
                 logger.error(f"Error sending message: {e}", exc_info=True)
