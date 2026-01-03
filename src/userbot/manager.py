@@ -53,6 +53,10 @@ class UserbotManager:
         # Entity cache - reduces network calls
         self.entity_cache: Dict[int, Any] = {}  # account_id -> destination_entity
 
+        # Connection health monitoring
+        self._last_ping: Dict[int, datetime] = {}  # account_id -> last successful ping
+        self._connection_health_task: Optional[asyncio.Task] = None
+
     async def start(self):
         """Start monitoring accounts and handling messages."""
         self._running = True
@@ -64,7 +68,11 @@ class UserbotManager:
         # Start periodic account monitor
         self._monitor_task = asyncio.create_task(self._monitor_accounts())
 
+        # Start connection health monitor (prevents silent disconnects)
+        self._connection_health_task = asyncio.create_task(self._monitor_connection_health())
+
         logger.info(f"✅ Userbot Manager started ({len(self.clients)} accounts)")
+        logger.info("✅ Connection health monitor started (checks every 30s)")
 
         # Keep running
         while self._running:
@@ -75,11 +83,18 @@ class UserbotManager:
         self._running = False
         logger.info("🛑 Stopping Userbot Manager...")
 
-        # Cancel monitor task
+        # Cancel monitor tasks
         if self._monitor_task:
             self._monitor_task.cancel()
             try:
                 await self._monitor_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._connection_health_task:
+            self._connection_health_task.cancel()
+            try:
+                await self._connection_health_task
             except asyncio.CancelledError:
                 pass
 
@@ -107,6 +122,91 @@ class UserbotManager:
                 break
             except Exception as e:
                 logger.error(f"Error in account monitor: {e}", exc_info=True)
+
+    async def _monitor_connection_health(self):
+        """
+        Monitor Telethon connection health and auto-reconnect.
+
+        CRITICAL: Prevents "Got difference" issue where Telethon silently
+        disconnects for 10-15 minutes and misses messages.
+
+        How it works:
+        - Every 30 seconds, checks if client is connected
+        - If disconnected → immediately reconnects
+        - If connected → sends keepalive ping (prevents NAT/firewall timeout)
+        - Logs every 5 minutes to confirm health
+        """
+        logger.info("🔍 Connection health monitor starting (30s interval)...")
+
+        while self._running:
+            try:
+                # Wait 30 seconds between checks
+                await asyncio.sleep(30)
+
+                for account_id, client in list(self.clients.items()):
+                    try:
+                        # Check connection status
+                        is_connected = client.is_connected()
+
+                        if not is_connected:
+                            # ⚠️ DISCONNECTED - Reconnect immediately
+                            logger.warning(
+                                f"⚠️ DISCONNECT DETECTED for account {account_id}! "
+                                f"Reconnecting immediately to prevent message loss..."
+                            )
+
+                            try:
+                                await client.connect()
+                                logger.info(f"✅ Reconnected account {account_id}")
+                                self._last_ping[account_id] = datetime.utcnow()
+                            except Exception as e:
+                                logger.error(f"❌ Failed to reconnect account {account_id}: {e}")
+
+                        else:
+                            # ✅ CONNECTED - Send keepalive ping
+                            try:
+                                # Lightweight request to keep connection alive
+                                # Prevents NAT/firewall from closing idle connection
+                                await client.get_me()
+
+                                # Log health status every 5 minutes
+                                last_ping = self._last_ping.get(account_id)
+                                now = datetime.utcnow()
+
+                                if not last_ping or (now - last_ping).total_seconds() > 300:
+                                    logger.info(f"💚 Account {account_id}: Connection healthy")
+                                    self._last_ping[account_id] = now
+
+                            except Exception as e:
+                                # Ping failed - connection might be stale
+                                logger.warning(
+                                    f"⚠️ Keepalive ping failed for account {account_id}: {e}. "
+                                    f"Forcing reconnect..."
+                                )
+
+                                try:
+                                    # Force reconnect
+                                    await client.disconnect()
+                                    await asyncio.sleep(1)
+                                    await client.connect()
+                                    logger.info(f"✅ Reconnected account {account_id} after ping failure")
+                                    self._last_ping[account_id] = datetime.utcnow()
+                                except Exception as reconnect_error:
+                                    logger.error(
+                                        f"❌ Failed to reconnect account {account_id}: {reconnect_error}"
+                                    )
+
+                    except Exception as e:
+                        logger.error(
+                            f"Error checking health for account {account_id}: {e}",
+                            exc_info=True
+                        )
+
+            except asyncio.CancelledError:
+                logger.info("Connection health monitor stopped")
+                break
+            except Exception as e:
+                logger.error(f"Error in connection health monitor: {e}", exc_info=True)
 
     async def _load_accounts(self):
         """Load active accounts from database and start clients."""
@@ -156,11 +256,17 @@ class UserbotManager:
         try:
             logger.info(f"🚀 Starting userbot for account {account.id} ({account.phone_number})")
 
-            # Create Telethon client
+            # Create Telethon client with robust connection settings
             client = TelegramClient(
                 StringSession(account.session_string),
                 account.api_id,
                 account.api_hash,
+                # Robust connection settings to prevent silent disconnects
+                connection_retries=10,      # Retry 10 times on connection failures (default: 5)
+                retry_delay=3,              # Wait 3s between retries (default: 1)
+                timeout=30,                 # 30s timeout for requests (default: 10)
+                request_retries=5,          # Retry requests 5 times (default: 3)
+                auto_reconnect=True,        # Auto-reconnect on disconnect
                 device_model=f"GroupPulse-{settings.APP_VERSION}",
                 system_version="Ubuntu 22.04",
                 app_version=settings.APP_VERSION,
@@ -180,9 +286,14 @@ class UserbotManager:
             self.destination_groups[account.id] = destination_group.telegram_id
             self.rule_matchers[user.id] = (rule_matcher, keywords)
 
-            # Register message handler - listens to ALL groups
-            @client.on(events.NewMessage())
+            # Register message handler - listens ONLY to groups and channels
+            @client.on(events.NewMessage(incoming=True))
             async def message_handler(event):
+                # ✅ Skip private chats - only process groups and channels
+                if not event.is_group and not event.is_channel:
+                    logger.debug("Skipping private chat message")
+                    return
+
                 await self._handle_message(event, account.id, user.id)
 
             # Cache destination entity (reduces network calls)
