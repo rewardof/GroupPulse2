@@ -3,7 +3,7 @@
 
 # Telegram libraries
 aiogram==3.13.1
-telethon==1.36.0
+telethon==1.42.0
 
 # Database
 sqlalchemy[asyncio]==2.0.35

@@ -18,13 +18,13 @@ from telethon.sessions import StringSession
 # Telegram API credentials
 API_ID = 28524826
 API_HASH = "7f2ce73d335735fe428df68cd6de48db"
-SESSION_STRING = ""  # Leave empty for first run, will be generated
+SESSION_STRING = "1ApWapzMBu0DOjNMKqDkpAUlu1DOQE-kSgPLB_Mz5vq5C4fPGvr_GH8YXZ3jkbxHUl-1ttD7Qz7MbM8H1M1HeVx7eufPI3VRIXTMOEs5GsGUR2lzjk4FYU_av67XbpLwGIC8ppwmFmi-czMlpLX8cnZqNVfXdnKGmWrMHPIooQmLEqsgBzuh1K5nbzpgdxQhTf4exmV80CXeDSZjfPuPhI35r7Et-fUBJN3fgOnDZh0PBm_syXcBx_z-9qh8ss-7n1BS4cT1FNBZYzUO9A1Gdt7oEvDaMUKnYmsINJtckIgAhPxyKTIy7MLgI_13Al9DujdrzTC6hXg7hgCHOJ1nqmd4pVFlnVtk="  # Leave empty for first run, will be generated
 
 # Destination group (where to forward messages)
-DESTINATION_GROUP_ID = -1001234567890  # Replace with your group ID
+DESTINATION_GROUP_ID = -1003546156709  # Replace with your group ID
 
 # Keywords to match (case-insensitive)
-KEYWORDS = ["python", "telethon", "bot"]
+KEYWORDS = ["toshken", "bogdod", 'ТОШКЕН']
 
 # Rate limiting (messages per second)
 RATE_LIMIT = 5  # Max 5 messages per second
@@ -192,11 +192,59 @@ class SimpleListener:
             await self.rate_limiter.acquire()
             rate_limit_wait = (datetime.utcnow() - rate_limit_start).total_seconds()
 
+            # Forward message
+            start_time = time.time()
+
+            # ✅ Get source chat info - NO network call, use event.chat directly
+            message = event.message
+            source_chat = event.chat
+            source_title = getattr(source_chat, 'title', 'Unknown')
+
+            # ✅ Get sender info - NO network call, use event.message.sender directly
+            sender = event.message.sender
+            sender_username = getattr(sender, 'username', None)
+            sender_name = None
+
+            if sender_username:
+                sender_display = f"@{sender_username}"
+            else:
+                # Use first name or "Unknown"
+                first_name = getattr(sender, 'first_name', None)
+                last_name = getattr(sender, 'last_name', None)
+                if first_name:
+                    sender_name = first_name
+                    if last_name:
+                        sender_name += f" {last_name}"
+                    sender_display = sender_name
+                else:
+                    sender_display = "Noma'lum foydalanuvchi"
+
+            # Get message link
+            message_link = None
+            if hasattr(source_chat, 'username') and source_chat.username:
+                # Public group - create link
+                message_link = f"https://t.me/{source_chat.username}/{message.id}"
+            else:
+                # Private group - can't create link
+                message_link = None
+
+            # Format new message
+            formatted_text = "❗️ Yangi e'lon topildi!\n\n"
+            formatted_text += f"👤 Foydalanuvchi: {sender_display}\n"
+
+            if message_link:
+                formatted_text += f"📍 Guruhdan: [{source_title}]({message_link})\n\n"
+            else:
+                formatted_text += f"📍 Guruhdan: {source_title}\n\n"
+
+            formatted_text += f"Original xabar:\n{message.text}"
+
             # ⏱️ TIMESTAMP 4: Start forwarding
             send_start = datetime.utcnow()
-            await self.client.forward_messages(
+            await self.client.send_message(
                 self.destination_entity,
-                event.message
+                formatted_text,
+                parse_mode='markdown'
             )
             send_end = datetime.utcnow()
             send_duration = (send_end - send_start).total_seconds()
