@@ -135,12 +135,15 @@ class SimpleListener:
 
     async def handle_message(self, event):
         """
-        Handle incoming message.
+        Handle incoming message with detailed timing logs.
 
         Args:
             event: Telethon NewMessage event
         """
         try:
+            # ⏱️ TIMESTAMP 1: When we received the message
+            received_at = datetime.utcnow()
+
             # Skip if not from group or channel
             if not event.is_group and not event.is_channel:
                 return
@@ -154,6 +157,9 @@ class SimpleListener:
             if sender and getattr(sender, 'bot', False):
                 return
 
+            # ⏱️ TIMESTAMP 2: Start keyword matching
+            match_start = datetime.utcnow()
+
             # Check if message matches keywords
             text = event.message.text.lower()
             matched_keywords = [kw for kw in KEYWORDS if kw.lower() in text]
@@ -161,29 +167,57 @@ class SimpleListener:
             if not matched_keywords:
                 return  # No match
 
+            # Calculate matching time
+            match_duration = (datetime.utcnow() - match_start).total_seconds()
+
             # Get source info
             chat = await event.get_chat()
             chat_name = getattr(chat, 'title', 'Unknown')
 
+            # ⏱️ TIMESTAMP 0: When message was sent (Telegram server time)
+            message_sent_at = event.message.date.replace(tzinfo=None) if event.message.date else received_at
+
+            # Calculate Telegram → Our Server delay
+            telegram_delay = (received_at - message_sent_at).total_seconds()
+
             logger.info(
                 f"📩 Match found in '{chat_name}': "
                 f"Keywords={matched_keywords} | "
-                f"Text='{text[:50]}...'"
+                f"Text='{text[:50]}...' | "
+                f"Telegram delay: {telegram_delay:.1f}s"
             )
 
-            # Rate limit before forwarding
+            # ⏱️ TIMESTAMP 3: Start rate limiter
+            rate_limit_start = datetime.utcnow()
             await self.rate_limiter.acquire()
+            rate_limit_wait = (datetime.utcnow() - rate_limit_start).total_seconds()
 
-            # Forward message
-            start_time = time.time()
+            # ⏱️ TIMESTAMP 4: Start forwarding
+            send_start = datetime.utcnow()
             await self.client.forward_messages(
                 self.destination_entity,
                 event.message
             )
-            duration = time.time() - start_time
+            send_end = datetime.utcnow()
+            send_duration = (send_end - send_start).total_seconds()
 
-            logger.info(
-                f"✅ Forwarded in {duration:.2f}s | "
+            # ⏱️ TOTAL: Calculate total delay
+            total_delay = (send_end - message_sent_at).total_seconds()
+
+            # 🎯 Identify bottleneck
+            bottleneck = "telegram" if telegram_delay > 5 else \
+                         "rate_limit" if rate_limit_wait > 5 else \
+                         "send" if send_duration > 2 else "ok"
+
+            # 📊 Log with comprehensive timing breakdown
+            log_level = logger.warning if total_delay > 30 else logger.info
+            log_level(
+                f"{'⚠️' if total_delay > 30 else '✅'} Forwarded in {total_delay:.1f}s total | "
+                f"Breakdown: telegram={telegram_delay:.1f}s, "
+                f"match={match_duration:.3f}s, "
+                f"rate_wait={rate_limit_wait:.1f}s, "
+                f"send={send_duration:.2f}s | "
+                f"Bottleneck: {bottleneck.upper()} | "
                 f"From: {chat_name}"
             )
 

@@ -87,6 +87,7 @@ python3 listener.py
 
 ## Logs
 
+### Startup Logs
 ```
 ============================================================
 🚀 Starting Simple Message Listener
@@ -97,9 +98,44 @@ python3 listener.py
 ✅ Rate limit: 5 msg/sec
 ============================================================
 👂 Listening for messages... (Press Ctrl+C to stop)
-📩 Match found in 'Python Developers': Keywords=['python'] | Text='Check out this python tutorial...'
-✅ Forwarded in 0.23s | From: Python Developers
 ```
+
+### Message Forwarding Logs (with Timing Breakdown)
+```
+📩 Match found in 'Python Chat': Keywords=['python'] | Text='python is great...' | Telegram delay: 0.5s
+✅ Forwarded in 1.2s total | Breakdown: telegram=0.5s, match=0.001s, rate_wait=0.0s, send=0.23s | Bottleneck: OK | From: Python Chat
+```
+
+### Slow Message Warning (>30s total)
+```
+📩 Match found in 'Dev Group': Keywords=['bot'] | Text='telegram bot api...' | Telegram delay: 45.3s
+⚠️ Forwarded in 45.8s total | Breakdown: telegram=45.3s, match=0.001s, rate_wait=0.0s, send=0.21s | Bottleneck: TELEGRAM | From: Dev Group
+```
+
+### Log Breakdown Explanation
+
+**Timing Stages:**
+- `telegram` - Delay from when message was sent to when we received it (Telegram network delay)
+- `match` - Time to check keywords (usually <0.01s)
+- `rate_wait` - Time spent waiting for rate limiter (0s if no limit)
+- `send` - Time to forward message to destination
+
+**Bottleneck Detection:**
+- `OK` - Normal, total delay <30s
+- `TELEGRAM` - Network delay from Telegram (>5s)
+- `RATE_LIMIT` - Rate limiter wait time (>5s)
+- `SEND` - Forwarding takes too long (>2s)
+
+**Example Analysis:**
+```
+✅ Forwarded in 1.2s total | Breakdown: telegram=0.5s, match=0.001s, rate_wait=0.0s, send=0.23s | Bottleneck: OK
+```
+- Total time: 1.2 seconds (fast ✅)
+- Telegram delay: 0.5s (normal)
+- Keyword matching: 0.001s (instant)
+- Rate limit wait: 0s (no wait)
+- Forwarding: 0.23s (fast)
+- Bottleneck: None - everything working perfectly
 
 ## Getting Destination Group ID
 
