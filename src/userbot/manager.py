@@ -264,11 +264,17 @@ class UserbotManager:
             account_id: Account ID
             user_id: User ID
         """
-        # ⏱️ Start timestamp
+        # ⏱️ TIMESTAMP 1: When we received the event
         received_at = datetime.utcnow()
 
         try:
             message: Message = event.message
+
+            # ⏱️ TIMESTAMP 0: When message was sent (Telegram server time)
+            message_sent_at = message.date.replace(tzinfo=None) if message.date else received_at
+
+            # Calculate Telegram → Our Server delay
+            telegram_delay = (received_at - message_sent_at).total_seconds()
 
             # Skip if no text
             if not message.text:
@@ -287,6 +293,9 @@ class UserbotManager:
 
             rule_matcher, keywords = matcher_data
 
+            # ⏱️ TIMESTAMP 2: Keyword matching
+            match_start = datetime.utcnow()
+
             # If no keywords, forward everything (rule without keywords)
             if not keywords:
                 # No keywords = forward all messages
@@ -295,6 +304,8 @@ class UserbotManager:
                 # Check if message matches any keywords
                 if not rule_matcher.match_keywords(message.text, keywords, require_all=False):
                     return  # No match, skip
+
+            match_duration = (datetime.utcnow() - match_start).total_seconds()
 
             # Get destination group
             destination_telegram_id = self.destination_groups.get(account_id)
@@ -307,11 +318,15 @@ class UserbotManager:
             if not client:
                 return
 
-            # ⏱️ Rate limit check
+            # ⏱️ TIMESTAMP 3: Rate limit wait
+            rate_limit_start = datetime.utcnow()
+
             can_send = await self.rate_limiter.acquire(
                 account_id=account_id,
                 destination_id=destination_telegram_id
             )
+
+            rate_limit_wait = (datetime.utcnow() - rate_limit_start).total_seconds()
 
             if not can_send:
                 logger.debug(f"Rate limited for account {account_id}, message skipped")
@@ -375,7 +390,7 @@ class UserbotManager:
                         # Fallback: try using ID directly
                         destination_entity = destination_telegram_id
 
-                # ⏱️ Send message
+                # ⏱️ TIMESTAMP 4: Send message
                 send_start = datetime.utcnow()
 
                 await client.send_message(
@@ -384,14 +399,29 @@ class UserbotManager:
                     parse_mode='markdown'
                 )
 
-                # ⏱️ Calculate delays
+                # ⏱️ TIMESTAMP 5: Send complete
                 send_end = datetime.utcnow()
-                total_delay = (send_end - received_at).total_seconds()
-                send_duration = (send_end - send_start).total_seconds()
 
-                logger.info(
-                    f"✅ Sent in {total_delay:.2f}s (send: {send_duration:.2f}s): "
-                    f"'{message.text[:50]}...' from {source_title}"
+                # Calculate all delays
+                send_duration = (send_end - send_start).total_seconds()
+                processing_time = (send_end - received_at).total_seconds()
+                total_delay = (send_end - message_sent_at).total_seconds()
+
+                # Determine bottleneck
+                bottleneck = "telegram" if telegram_delay > 5 else \
+                             "rate_limit" if rate_limit_wait > 5 else \
+                             "send" if send_duration > 2 else "ok"
+
+                # Log with comprehensive timing
+                log_level = logger.warning if total_delay > 30 else logger.info
+                log_level(
+                    f"{'⚠️' if total_delay > 30 else '✅'} Message forwarded in {total_delay:.1f}s total | "
+                    f"Breakdown: telegram={telegram_delay:.1f}s, "
+                    f"match={match_duration:.3f}s, "
+                    f"rate_wait={rate_limit_wait:.1f}s, "
+                    f"send={send_duration:.2f}s | "
+                    f"Bottleneck: {bottleneck.upper()} | "
+                    f"Text: '{message.text[:30]}...'"
                 )
 
             except FloodWaitError as e:
