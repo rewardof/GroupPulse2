@@ -9,7 +9,7 @@ Uses rate limiting to prevent FloodWait errors.
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
@@ -159,7 +159,7 @@ class SimpleListener:
         """
         try:
             # ⏱️ TIMESTAMP 1: When we received the message
-            received_at = datetime.now()
+            received_at = datetime.now(timezone.utc)
 
             # Skip if not from group or channel
             if not event.is_group and not event.is_channel:
@@ -183,7 +183,7 @@ class SimpleListener:
                 return
 
             # ⏱️ TIMESTAMP 2: Start keyword matching
-            match_start = datetime.now()
+            match_start = datetime.now(timezone.utc)
 
             # Check if message matches keywords
             text = event.message.text.lower()
@@ -193,7 +193,7 @@ class SimpleListener:
                 return  # No match
 
             # Calculate matching time
-            match_duration = (datetime.now() - match_start).total_seconds()
+            match_duration = (datetime.now(timezone.utc) - match_start).total_seconds()
 
             # Get source info
             chat = await event.get_chat()
@@ -207,9 +207,9 @@ class SimpleListener:
             )
 
             # ⏱️ TIMESTAMP 3: Start rate limiter
-            rate_limit_start = datetime.now()
+            rate_limit_start = datetime.now(timezone.utc)
             await self.rate_limiter.acquire()
-            rate_limit_wait = (datetime.now() - rate_limit_start).total_seconds()
+            rate_limit_wait = (datetime.now(timezone.utc) - rate_limit_start).total_seconds()
 
             # Forward message
             start_time = time.time()
@@ -259,13 +259,13 @@ class SimpleListener:
             formatted_text += f"Original xabar:\n{message.text}"
 
             # ⏱️ TIMESTAMP 4: Start forwarding
-            send_start = datetime.now()
+            send_start = datetime.now(timezone.utc)
             await self.client.send_message(
                 self.destination_entity,
                 formatted_text,
                 parse_mode='markdown'
             )
-            send_end = datetime.now()
+            send_end = datetime.now(timezone.utc)
             send_duration = (send_end - send_start).total_seconds()
 
             # ⏱️ TOTAL: Calculate total delay
