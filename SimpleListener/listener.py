@@ -32,10 +32,9 @@ RATE_LIMIT = 5  # Max 5 messages per second
 # =======================================================
 
 # Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(format='[%(levelname) %(asctime)s] %(name)s: %(message)s',
+                    level=logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 
