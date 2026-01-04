@@ -142,7 +142,7 @@ class SimpleListener:
         """
         try:
             # ⏱️ TIMESTAMP 1: When we received the message
-            received_at = datetime.utcnow()
+            received_at = datetime.now()
 
             # Skip if not from group or channel
             if not event.is_group and not event.is_channel:
@@ -158,7 +158,7 @@ class SimpleListener:
                 return
 
             # ⏱️ TIMESTAMP 2: Start keyword matching
-            match_start = datetime.utcnow()
+            match_start = datetime.now()
 
             # Check if message matches keywords
             text = event.message.text.lower()
@@ -168,7 +168,7 @@ class SimpleListener:
                 return  # No match
 
             # Calculate matching time
-            match_duration = (datetime.utcnow() - match_start).total_seconds()
+            match_duration = (datetime.now() - match_start).total_seconds()
 
             # Get source info
             chat = await event.get_chat()
@@ -188,9 +188,9 @@ class SimpleListener:
             )
 
             # ⏱️ TIMESTAMP 3: Start rate limiter
-            rate_limit_start = datetime.utcnow()
+            rate_limit_start = datetime.now()
             await self.rate_limiter.acquire()
-            rate_limit_wait = (datetime.utcnow() - rate_limit_start).total_seconds()
+            rate_limit_wait = (datetime.now() - rate_limit_start).total_seconds()
 
             # Forward message
             start_time = time.time()
@@ -240,13 +240,13 @@ class SimpleListener:
             formatted_text += f"Original xabar:\n{message.text}"
 
             # ⏱️ TIMESTAMP 4: Start forwarding
-            send_start = datetime.utcnow()
+            send_start = datetime.now()
             await self.client.send_message(
                 self.destination_entity,
                 formatted_text,
                 parse_mode='markdown'
             )
-            send_end = datetime.utcnow()
+            send_end = datetime.now()
             send_duration = (send_end - send_start).total_seconds()
 
             # ⏱️ TOTAL: Calculate total delay
