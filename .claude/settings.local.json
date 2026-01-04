@@ -4,7 +4,10 @@
       "Bash(tree:*)",
       "Bash(cat:*)",
       "Bash(python scripts/create_db.py:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(pip show:*)",
+      "Bash(ping:*)",
+      "Bash(source venv/bin/activate)"
     ]
   }
 }
