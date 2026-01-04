@@ -183,7 +183,7 @@ class SimpleListener:
             logger.info(
                 f"📩 Match found in '{chat_name}': "
                 f"Keywords={matched_keywords} | "
-                f"Text='{text[:50]}...' | "
+                f"Text='{text[:10]}...' | "
                 f"Telegram delay: {telegram_delay:.1f}s"
             )
 
