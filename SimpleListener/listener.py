@@ -18,7 +18,8 @@ from telethon.sessions import StringSession
 # Telegram API credentials
 API_ID = 28524826
 API_HASH = "7f2ce73d335735fe428df68cd6de48db"
-SESSION_STRING = "1ApWapzMBu3Kb9tvEsC1O1vPmkRT7yWI6BqnwUJ42pCyZhyVSI2JhJjC01mGtBQcU4b19TKFcQci-rl5ueW9tljimqcF4d3HH-R328_Yk3tTttD8nOsVMGLtf7JW8-Cl7o9Y3LDO3B7cmh4thspnscaR5k4GF_y6cix2EhiZfWIiZkaL7ymKvyYsRbiKY8R5SIQg3SB5pqbdUNrqtJ-7uwj_rkBU0igoLw4v7ou-0kbMCfxXkzQRWwv0r6SI6u9s2Yoo6mSrqNeC3wsfpDRZqT4Fg6qwm5JfkTmwjkhdKzdeFGlL9Zn_VNew_26v7dq_qCSL_z69p_v97AtrStgBnNKygM2fi4yE="
+SESSION_STRING = "1ApWapzMBu6VJXxr0uBiR6fCpv8xQpHcyF-0DDNNTUp5p2dmV_DEMXwSF771M5SGQeInl0bgmizVxV39ekY5ugbvK-sWX6NTga6lQ6mqPNTltcvX0pQLkV_jMJIh4sUCimcFJg-HVLx4MYpk98GihQMYWJYlIhcfh0eSiNAQR9MNv-5zPFQF2hZgfqwc2XXpCDVSC15B1DlEDci56P0CYEnwjDtqXJv4uaJs3kTycNPZW9S1MeQxqNcsF3CUeWJvfBMhoO-qo3VSBZjTwdxSYhQiGRU69h02FSN7Iut2jHxi1xzlu_3qd_xJ3MK6r1yyevXcRcfIScJ_zAzexeLjmetpgK8qOil4="
+
 # Destination group (where to forward messages)
 DESTINATION_GROUP_ID = -1003546156709  # Replace with your group ID
 
@@ -37,6 +38,9 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+# Reduce Telethon debug noise (only show warnings/errors)
+logging.getLogger('telethon').setLevel(logging.WARNING)
 
 
 class RateLimiter:
@@ -124,10 +128,23 @@ class SimpleListener:
         logger.info(f"✅ Rate limit: {RATE_LIMIT} msg/sec")
         logger.info("=" * 60)
 
+        # 🔧 FIX: Catch up to current state to skip old messages
+        logger.info("⏭️  Syncing to current state (skipping old messages)...")
+        await self.client.catch_up()
+        logger.info("✅ Sync complete - now listening for NEW messages only")
+
         # Register message handler
         @self.client.on(events.NewMessage(incoming=True))
         async def message_handler(event):
             await self.handle_message(event)
+
+        # Monitor disconnections
+        @self.client.on(events.Raw)
+        async def raw_handler(event):
+            # Log important connection events
+            event_name = type(event).__name__
+            if 'Disconnect' in event_name or 'Connect' in event_name:
+                logger.warning(f"🔌 Connection event: {event_name}")
 
         # Keep running
         logger.info("👂 Listening for messages... (Press Ctrl+C to stop)")
@@ -157,6 +174,14 @@ class SimpleListener:
             if sender and getattr(sender, 'bot', False):
                 return
 
+            # 🔧 FIX: Skip old messages (ignore messages older than 60 seconds)
+            message_sent_at = event.message.date.replace(tzinfo=None) if event.message.date else received_at
+            telegram_delay = (received_at - message_sent_at).total_seconds()
+
+            if telegram_delay > 60:
+                logger.debug(f"⏭️  Skipping old message ({telegram_delay:.0f}s old)")
+                return
+
             # ⏱️ TIMESTAMP 2: Start keyword matching
             match_start = datetime.now()
 
@@ -173,12 +198,6 @@ class SimpleListener:
             # Get source info
             chat = await event.get_chat()
             chat_name = getattr(chat, 'title', 'Unknown')
-
-            # ⏱️ TIMESTAMP 0: When message was sent (Telegram server time)
-            message_sent_at = event.message.date.replace(tzinfo=None) if event.message.date else received_at
-
-            # Calculate Telegram → Our Server delay
-            telegram_delay = (received_at - message_sent_at).total_seconds()
 
             logger.info(
                 f"📩 Match found in '{chat_name}': "
