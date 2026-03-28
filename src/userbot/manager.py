@@ -497,9 +497,20 @@ class UserbotManager:
                         self.entity_cache[account_id] = destination_entity
                         logger.debug(f"Cached destination entity for account {account_id}")
                     except Exception as e:
-                        logger.error(f"Failed to get destination entity: {e}")
-                        # Fallback: try using ID directly
-                        destination_entity = destination_telegram_id
+                        logger.warning(f"Failed to get destination entity: {e}. Fetching dialogs to populate cache...")
+                        try:
+                            async for dialog in client.iter_dialogs():
+                                if dialog.entity and getattr(dialog.entity, 'id', None) == destination_telegram_id:
+                                    destination_entity = dialog.entity
+                                    self.entity_cache[account_id] = destination_entity
+                                    logger.info(f"Found destination entity via dialogs for account {account_id}")
+                                    break
+                            if not destination_entity:
+                                logger.error(f"Could not find entity {destination_telegram_id} in dialogs. Skipping message.")
+                                return
+                        except Exception as e2:
+                            logger.error(f"Failed to fetch dialogs: {e2}. Skipping message.")
+                            return
 
                 # ⏱️ TIMESTAMP 4: Send message
                 send_start = datetime.utcnow()
